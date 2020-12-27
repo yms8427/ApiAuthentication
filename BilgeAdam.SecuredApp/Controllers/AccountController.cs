@@ -1,15 +1,13 @@
 ﻿using BilgeAdam.SecuredApp.Model;
-using Microsoft.AspNetCore.Authorization;
+using BilgeAdam.SecuredApp.Services.Abstractions;
+using BilgeAdam.SecuredApp.Services.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System;
-using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
-using System.Linq;
 using System.Security.Claims;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace BilgeAdam.SecuredApp.Controllers
 {
@@ -17,25 +15,31 @@ namespace BilgeAdam.SecuredApp.Controllers
     [Route("api/[controller]")]
     public class AccountController : ControllerBase
     {
+        private readonly IUserService service;
         private readonly string signingKey;
-        public AccountController(IOptions<Settings> options)
+
+        public AccountController(IUserService service, IOptions<Settings> options)
         {
+            this.service = service;
             signingKey = options.Value.AuthenticationKey;
         }
+
         [HttpPost("login")]
         public IActionResult Login([FromBody] LoginInputModel model)
         {
-            if (model.UserName == "can" && model.Password == "123")
+            var user = service.Login(model.UserName, model.Password);
+            if (user != null)
             {
                 var key = Encoding.ASCII.GetBytes(signingKey);
                 var tokenDescriptor = new SecurityTokenDescriptor
                 {
                     Subject = new ClaimsIdentity(new[]
                     {
-                        new Claim(ClaimTypes.NameIdentifier, "1"),
-                        new Claim(ClaimTypes.Name, "can")
+                        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                        new Claim(ClaimTypes.Name, user.UserName),
+                        new Claim(ClaimTypes.GivenName, user.FullName)
                     }),
-                    Expires = DateTime.Now.AddMinutes(1),
+                    Expires = DateTime.Now.AddMinutes(15),
                     SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
                 };
                 var tokenHandler = new JwtSecurityTokenHandler();
@@ -44,6 +48,24 @@ namespace BilgeAdam.SecuredApp.Controllers
                 return Ok(jwtToken);
             }
             return BadRequest("incorrect credentials");
+        }
+
+        [HttpPost("register")]
+        public IActionResult Register([FromBody] RegisterInputModel model)
+        {
+            var dto = new RegisterDto
+            {
+                UserName = model.UserName,
+                Password = model.Password,
+                FirstName = model.FirstName,
+                LastName = model.LastName,
+                BirthDate = model.BirthDate
+            };
+            if (service.Register(dto))
+            {
+                return Ok(true);
+            }
+            return BadRequest(false);
         }
     }
 }
